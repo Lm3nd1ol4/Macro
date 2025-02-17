@@ -1,0 +1,93 @@
+# Preparacion ======================================================
+setwd("D:/Users/laura.cruz/Documents/mi dar")
+rm(list = ls())
+
+# Librerias ---------------------------------------------------------------
+
+library(siebanxicor)
+library(tidyverse)
+library(scales)
+library(ggtext)
+library(writexl)
+
+source("temas.R")
+token <- "64ced5d901f7b2b8e234af91d9ae00abb6579a70f37c44484f47a11c108c1b33"
+
+setToken(token)
+
+## ID de series ===================================================
+
+#SF38461 reservas
+
+nombres <- c("reservas")
+
+idSeries <- c("SF38461")
+
+
+metadata <- getSeriesMetadata(idSeries)
+
+hoy <- Sys.Date() #mas reciente
+
+# Dataframe de las Reservas =========================
+
+series <- getSeriesData(idSeries, '2000-01-01', hoy)
+series <- as.data.frame(series)
+
+
+series <- series %>% 
+  rename(
+    date = SF38461.date,
+    value = SF38461.value
+  )
+
+series$year<- year(series$date)
+series$month<- month(series$date)
+
+series <- series %>% 
+  mutate(
+    mes_actual = 
+      ifelse(
+        month == last(month), "actual", "resto")
+      )
+
+## Grafico ================================0
+colores_personalizados <- c("resto" = "#98989A",
+                            "actual" = "#a57f2c")
+
+ri_plot <- ggplot(series %>% 
+         filter(year > 2018), 
+       aes(x=date,y=value, fill = mes_actual))+
+  geom_bar(stat="identity")+
+  scale_y_continuous(label=comma,
+                     expand = c(0.001,0))+
+  #scale_x_continuous()+
+  scale_fill_manual(values = colores_personalizados,
+                    name = "")+
+  coord_cartesian(ylim = c(170000, NA))+
+  scale_x_date(date_labels = "%Y",  #poner atención
+               date_breaks = "1 year",
+               expand = c(0,0))+
+  theme_conasami+
+  ylab("Millones de dólares") + 
+  theme(legend.position = "none")
+
+ri_plot
+fecha_hoy <- format(Sys.Date(), "%Y-%m")
+
+# Concatenar el año y el mes con el nombre del archivo
+path_plot <- "D:/Users/laura.cruz/Documents/mi dar/"
+archivo_ri <- paste(path_plot, "reservas_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_ri, plot = ri_plot,
+       width = 15, height = 7, units = "cm")
+
+# Archivo excel
+
+series <- series %>% 
+  mutate(
+    tc_men = ((value/lag(value, n = 1L))-1)*100,
+    tc_anu = ((value/lag(value, n = 12L))-1)*100
+  )
+path_xlsx <- "D:/Users/laura.cruz/Documents/mi dar/"
+excel_ri <- paste(path_xlsx,"reservas", ".xlsx", sep = "")
+write_xlsx(series, excel_ri)
+
