@@ -1,0 +1,96 @@
+# Preparacion ======================================================
+setwd("D:/Users/laura.cruz/Documents/mi dar")
+rm(list = ls())
+
+# Librerias ---------------------------------------------------------------
+
+library(siebanxicor)
+library(tidyverse)
+library(scales)
+library(ggtext)
+library(writexl)
+
+source("temas.R")
+token <- "885dff3153456c67508300b6b5fa39ec7079978f78a83a5eaa61b92a07698639"
+
+setToken(token)
+
+## ID de series ===================================================
+
+#SE27803 remesas
+
+nombres <- c("remesas")
+
+idSeries <- c("SE27803")
+
+
+metadata <- getSeriesMetadata(idSeries)
+
+hoy <- Sys.Date() #mas reciente
+
+# Dataframe de las Remesas =========================
+
+series <- getSeriesData(idSeries, '2000-01-01', hoy)
+series <- as.data.frame(series)
+
+
+series <- series %>% 
+  rename(
+    date = SE27803.date,
+    value = SE27803.value
+  )
+
+series$year<- year(series$date)
+series$month<- month(series$date)
+
+series <- series %>% 
+  mutate(
+    mes_actual = 
+      ifelse(
+        month == last(month), "actual", "resto")
+  )
+#"#B48E5D"
+#"#621132"
+#"#6F6F71"
+## Grafico ================================0
+colores_personalizados <- c("resto" = "#98989A",
+                            "actual" = "#a57f2c")
+rm_plot <- ggplot(series %>% 
+                    filter(year > 2018), 
+                  aes(x=date,y=value, fill = mes_actual))+
+  geom_bar(stat="identity")+
+  #scale_x_continuous()+
+  scale_y_continuous(label=comma,
+                     expand = c(0.001,0))+
+  scale_fill_manual(values = colores_personalizados,
+                    name = "")+
+ # coord_cartesian(ylim = c(170000, NA))+
+  scale_x_date(date_labels = "%Y",  #poner atención
+               date_breaks = "1 year",
+               expand = c(0,0))+
+  theme_conasami+
+  ylab("Millones de dólares") + 
+  theme(legend.position = "none")
+
+rm_plot
+
+fecha_hoy <- format(Sys.Date(), "%Y-%m")
+
+# Concatenar el año y el mes con el nombre del archivo
+path_plot <- "D:/Users/laura.cruz/Documents/mi dar/"
+archivo_rm <- paste(path_plot,"remesas_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_rm, plot = rm_plot, width = 15,
+       height = 7, units = "cm")
+
+# Archivo excel
+
+
+series <- series %>% 
+  mutate(
+    tc_men = ((value/lag(value, n = 1L))-1)*100,
+    tc_anu = ((value/lag(value, n = 12L))-1)*100
+  )
+path_xlsx <- "D:/Users/laura.cruz/Documents/mi dar/"
+excel_rm <- paste(path_xlsx, "remesas", ".xlsx", sep = "")
+write_xlsx(series, excel_rm)
+
