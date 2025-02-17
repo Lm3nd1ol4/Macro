@@ -1,0 +1,200 @@
+# Preparacion ======================================================
+setwd("D:/Users/laura.cruz/Documents/mi dar")
+rm(list = ls())
+
+library(ggh4x)
+library(siebanxicor)
+library(tidyverse)
+library(scales)
+library(ggtext)
+
+source("temas.R")
+
+token <- "8dc7fc1da836e7c31cffce8dd2b778321ff3577a4f6b3cdd32242c9d6be2d17a"
+setToken(token)
+
+## ID de series ===================================================
+
+# SE44352 cuenta_corriente
+# SE44353 credito
+# SE44372 debito
+# SE44393 cuenta_capital
+# SE44396 cuenta_financiera
+# SE44397 inversion_directa
+# SE44408 inversion_cartera
+# SE44433 derivados_financieros
+# SE44434 otro_inversion
+# SE44457 activos_reserva
+# SE44460 errores_omisiones
+
+nombres <- c("cuenta_corriente","credito","debito",
+           "cuenta_capital","cuenta_financiera",
+           "inversion_directa","inversion_cartera",
+           "derivados_financieros","otro_inversion",
+           "activos_reserva","errores_omisiones")
+
+
+idSeries <- c("SE44352","SE44353","SE44372",
+              "SE44393","SE44396","SE44397",
+              "SE44408","SE44433","SE44434",
+              "SE44457","SE44460")
+
+
+metadata <- getSeriesMetadata(idSeries)
+
+hoy <- Sys.Date() #mas reciente
+
+# Balanza de pagos ==================================================
+## Base de datos ==============================================
+series <- getSeriesData(idSeries, '2000-01-01', hoy)
+
+for (nombre in idSeries) {
+  assign(nombre, getSerieDataFrame(series, nombre), envir = .GlobalEnv)
+}
+
+bp <- bind_cols(SE44352, SE44393,
+                SE44396, SE44460)
+
+bp <- bp%>%
+  rename(date = date...1)%>%
+  select(-starts_with("date..."))%>%
+  filter(date > "2018-10-01")
+
+nombres <- c("date", "cuenta_corriente", "cuenta_capital", 
+             "cuenta_financiera","errores_omisiones")
+
+names(bp) <- nombres
+
+bp$year<- year(bp$date)
+bp$trim<- quarter(bp$date)
+
+bp <- bp %>%
+  mutate(
+    trim = as.character(trim),
+    trim = case_when(
+      trim == "1" ~ "I",
+      trim == "2" ~ "II",
+      trim == "3" ~ "III",
+      trim == "4" ~ "IV"
+    )
+  )
+
+bp <- bp%>%
+  mutate(cuenta_financiera = cuenta_financiera*-1)%>%
+  pivot_longer(
+    cols = c(starts_with("cuenta_"), errores_omisiones),
+    names_to = "origen",
+    values_to = "cuenta"
+  )
+
+bp <- bp %>%
+  mutate(
+    origen = case_when(
+      origen == "cuenta_corriente" ~ "Cuenta corriente",
+      origen == "cuenta_capital" ~ "Cuenta de capital",
+      origen == "cuenta_financiera" ~ "Cuenta financiera",
+      origen == "errores_omisiones" ~ "Errores y omisiones",
+      TRUE ~ as.character(origen)  # Condición predeterminada
+    )
+  )
+
+rm("SE44352","SE44353","SE44372",
+              "SE44393","SE44396","SE44397",
+              "SE44408","SE44433","SE44434",
+              "SE44457","SE44460")
+## Graficos ======================================================
+"#e6d194"
+"#621132"
+"#98989A"
+colores_personalizados <- c("Cuenta corriente" = "#621132",
+                            "Cuenta de capital" = "#002f2a",
+                            "Cuenta financiera" = "#e6d194",
+                            "Errores y omisiones" = "#98989A")
+
+bp_plot <- ggplot(data = bp, aes(x = interaction(trim, year), 
+                                 y = cuenta, fill=origen))+
+  geom_bar(stat="identity")+
+  scale_y_continuous(label=comma)+
+  scale_fill_manual(values = colores_personalizados,
+                    name = "",
+                    guide = guide_legend(nrow = 2))+
+  theme_conasami +
+  theme(axis.ticks = element_blank(),
+        axis.ticks.y = element_line(
+          colour = "black", linewidth = 0.5),
+        axis.ticks.x = element_line(
+          colour = "black", linewidth = 0.5),
+        legend.position = "bottom") +
+  scale_x_discrete(NULL, guide = "axis_nested",
+                 expand = c(0, 0)) +
+  ylab("Millones de dólares")
+bp_plot
+
+fecha_hoy <- format(Sys.Date(), "%Y-%m")
+
+# Concatenar el año y el mes con el nombre del archivo
+path_plot <- "D:/Users/laura.cruz/Documents/mi dar/"
+archivo_bp <- paste(path_plot,"bp_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_bp, plot = bp_plot, width = 15, height = 10, units = "cm")
+
+# Cuenta corriente ====================================================
+## Base de datos =====================================================
+
+idSeries <- c("SE40521")
+metadata <- getSeriesMetadata(idSeries)
+series <- getSeriesData(idSeries, '2000-01-01', hoy)
+cuenta_cor_pib <- getSerieDataFrame(series, "SE40521")
+
+cuenta_cor_pib <- cuenta_cor_pib%>%
+  filter(date > "2018-10-01")
+
+cuenta_cor_pib$year<- year(cuenta_cor_pib$date)
+
+cuenta_cor_pib$trim<-quarter(cuenta_cor_pib$date)
+
+cuenta_cor_pib <- cuenta_cor_pib %>%
+  mutate(
+    trim = as.character(trim),
+    trim = case_when(
+      trim == "1" ~ "I",
+      trim == "2" ~ "II",
+      trim == "3" ~ "III",
+      trim == "4" ~ "IV"
+    )
+  )
+
+cuenta_cor_pib <- cuenta_cor_pib%>%
+  mutate(
+    trim_hoy = ifelse(trim == last(trim), "Sí", "No")
+  )
+
+## Graficos ===============================================
+
+colores_personalizados <- c("Sí" = "#621132",
+                            "No" = "#e6d194")
+
+cc_plot <- ggplot(data = cuenta_cor_pib, 
+                  aes(x = interaction(trim, year), 
+                      y=value, fill = trim_hoy))+
+  geom_bar(stat="identity")+
+  geom_hline(yintercept = 0, linewidth=0.2)+
+  scale_fill_manual(values = colores_personalizados,
+                    name = "")+
+  ylab("")+
+  theme_conasami +
+  theme(axis.ticks = element_blank(),
+        axis.ticks.y = element_line(
+          colour = "black", linewidth = 0.5),
+        axis.ticks.x = element_line(
+          colour = "black", linewidth = 0.5),
+        legend.position = "none") +
+  scale_x_discrete(NULL, guide = "axis_nested",
+                   expand = c(0, 0)) +
+  ylab("Puntos porcentuales")
+
+cc_plot
+
+# Concatenar el año y el mes con el nombre del archivo
+archivo_cc <- paste(path_plot,"cc_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_cc, plot = cc_plot, width = 15, height = 7, units = "cm")
+
