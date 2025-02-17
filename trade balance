@@ -1,0 +1,180 @@
+# Preparacion ======================================================
+setwd("D:/Users/laura.cruz/Documents/mi dar")
+rm(list = ls())
+
+
+# Librerias ---------------------------------------------------------------
+
+library(tidyverse)
+library(scales)
+library(ggtext)
+library(writexl)
+library(inegiR)
+source("temas.R")
+
+token <- "fdeb5d99-1802-d332-f706-23115512795c"
+
+
+## ID de series ===================================================
+
+series <- list(
+    saldo = "87537",
+    #Exportaciones
+    exp_sa = "65649",
+    exp_varmen = "451979",
+    exp_varanu = "451980",
+    #Exportaciones petroleras
+    exppet_sa = "87512", exppet_varmen = "451983", exppet_varanu = "451984", 
+    expcru_sa = "206760", expcru_varmen = "451987", expcru_varanu = "451988", 
+    expotr_sa = "206762", expotr_varmen = "451991", expotr_varanu = "451992",
+    #Exp no petroleras
+    expnp_sa = "87514", expnp_varmen = "451995", expnp_varanu = "451996",
+    expag_sa = "87516", expag_varmen = "451999" , expag_varanu = "452000",
+    expext_sa = "87518", expext_varmen = "452003", expext_varanu = "452004",
+    expman_sa = "87520", expman_varmen = "452007", expman_varanu = "452008",
+    expaut_sa = "206764", expaut_varmen = "452011", expaut_varanu = "452012",
+    expres_sa = "206766", expres_varmen = "452015", expres_varanu = "452016",
+    #Importaciones
+    im_sa = "65651", im_varmen = "452019", im_varanu = "452020",
+    #Importaciones petroleras
+    imp_sa = "206768", imp_varmen = "452023", imp_varanu= "452024",
+    #Im no petroleras
+    imnp_sa = "206770", imnp_varmen = "452027", imnp_varanu = "452028",
+    imbc_sa = "87522", imbc_varmen = "452031", imbc_varanu = "452032",
+    imbcp_sa = "206772", imbcp_varmen = "452035", imbcp_varanu = "452036",
+    imbcnp_sa = "206774", imbcnp_varmen = "452039", imbcnp_varanu = "452040",
+    imbi_sa = "87524", imbi_varmen = "452043", imbi_varanu = "452044",
+    imbip_sa = "206776", imbip_varmen = "452047", imbip_varanu = "452048",
+    imbinp_sa = "206778", imbinp_varmen = "452051", imbinp_varanu = "452052",
+    imbca_sa = "87530", imbca_varmen = "452055", imbca_varanu = "452056"
+)
+
+# Definir función para procesar cada serie
+procesar_serie <- function(serie_id, token) {
+  serie <- inegi_series(serie_id, token)
+  serie <- as_tibble(serie) %>%
+    select(-date_shortcut, -notes) %>%
+    filter(date > "1993-12-01") %>%
+    arrange(date)
+  return(serie)
+}
+
+# Procesar cada serie
+for (nombre_serie in names(series)) {
+  assign(nombre_serie, procesar_serie(series[[nombre_serie]], token))
+}
+
+# Unimos todos los tibbles
+
+nombres <- names(series)
+
+balanza_com <- lapply(nombres, function(nombre) get(nombre))
+balanza_com <- setNames(balanza_com, nombres)
+
+balanza_com <- do.call(cbind, balanza_com)
+
+balanza_com <- balanza_com %>% 
+  rename(date = saldo.date) %>%
+  select(-ends_with(".date"))
+
+
+# Dataframe final =================================================
+
+balanza_com <- balanza_com %>% 
+  mutate(year = year(date),
+         mes = month(date))
+
+# Variacion mensual y anual del saldo
+
+balanza_com <- balanza_com %>% 
+  mutate(
+    saldo_var.mensual =
+      ((saldo.values-lag(saldo.values, n=1L))/
+         (lag(saldo.values)*(mes-lag(mes, n=1L))))*100,
+    saldo_var.anual = 
+      ((saldo.values/lag(saldo.values, n=12L))-1)*100
+    )
+
+
+# Graficas ====================================================
+
+# Graficas ====================================================
+
+## Exportaciones 
+exp_sa.plot <- ggplot(balanza_com %>% filter(year >= 2019),
+                      aes(x = date, y = exp_sa.values))+
+  geom_line(linewidth = 0.8, col = "#a57f2c")+
+  geom_point(fill = "#a57f2c", color = "white", 
+             shape=21, size =1.6)+
+  theme_conasami +
+  scale_y_continuous(labels = comma)+
+  scale_x_date(date_labels = "%Y",
+               date_breaks = "1 year",
+               expand = c(0,12))+
+  labs(y = "Millones de dólares") +
+  theme(axis.title.y = element_blank())
+
+exp_sa.plot
+
+fecha_hoy <- format(Sys.Date(), "%Y-%m")
+# Concatenar el año y el mes con el nombre del archivo
+path_plot <- "D:/Users/laura.cruz/Documents/mi dar/"
+archivo_exp <- paste(path_plot,"dar_exp_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_exp, plot = exp_sa.plot, 
+       width = 15, height = 7, units = "cm")
+
+## Importaciones 
+im_sa.plot <- ggplot(balanza_com %>% filter(year >= 2019),
+                     aes(x = date, y = im_sa.values))+
+  geom_line(linewidth = 0.8, col = "#98989a")+
+  geom_point(fill = "#98989a", color = "white", 
+             shape=21, size =1.6)+
+  theme_conasami +
+  scale_y_continuous(labels = comma)+
+  scale_x_date(date_labels = "%Y",
+               date_breaks = "1 year",
+               expand = c(0,12))+
+  labs(y = "Millones de dólares") +
+  theme(axis.title.y = element_blank())
+
+im_sa.plot
+
+
+# Concatenar el año y el mes con el nombre del archivo
+archivo_im <- paste0(path_plot,"dar_im_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_im, plot = im_sa.plot, 
+       width = 15, height = 7, units = "cm")
+
+
+## Exportaciones e importaciones
+
+total.plot <- ggplot(balanza_com %>% filter(year >= 2019),
+                     aes(x = date, y = exp_sa.values))+
+  
+  geom_line(aes(y = exp_sa.values, color = "Exportaciones"), linewidth = 0.8) +
+  # geom_point(aes(y = exp_sa.values, fill = "Exportaciones"), 
+  #            color = "white", shape = 21, size = 1.6) +
+  geom_line(aes(y = im_sa.values, color = "Importaciones"), linewidth = 0.8) +
+  # geom_point(aes(y = im_sa.values, fill = "Importaciones"), 
+  #            color = "white", shape = 21, size = 1.6) +
+  scale_color_manual(values = c("Exportaciones" = "#a57f2c", 
+                                "Importaciones" = "#98989a")) +
+  # scale_fill_manual(values = c("Exportaciones" = "#a57f2c", 
+  #                              "Importaciones" = "#98989a"),
+  #                   guide = "none") +
+  theme_conasami +
+  scale_y_continuous(labels = comma)+
+  scale_x_date(date_labels = "%Y",
+               date_breaks = "1 year",
+               expand = c(0,12))+
+  labs(y = "Millones de dólares") +
+  theme(axis.title.y = element_blank(),
+        legend.position = "bottom",
+        legend.title = element_blank())
+
+total.plot
+
+archivo_total <- paste0(path_plot,"dar_total_bc_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_total, plot = total.plot, 
+       width = 15, height = 8, units = "cm")
+
