@@ -1,0 +1,276 @@
+setwd("D:/Users/laura.cruz/Documents/mi dar")
+rm(list = ls())
+options(scipen=999) #para desactivar la notación científica
+
+# Librerias ---------------------------------------------------------------
+
+library(tidyverse)
+library(scales)
+library(ggtext)
+library(writexl)
+library(inegiR)
+
+library(extrafont)
+# font_import()
+# n
+loadfonts(device = "win")
+
+token <- "41fbd0eb-c832-63e3-bc4f-c47d9cbd57aa"
+
+source("temas.R")
+
+# Usuarios ----------------------------------------------------------------
+
+# Consulta API INEGI ==================================================
+
+
+# Crear la lista manualmente con los valores proporcionados
+
+series <- list(
+  Aguascalientes = "740265",
+  Baja_California = "740272",
+  Baja_California_Sur = "740279",
+  Campeche = "740286",
+  Coahuila = "740293",
+  Colima = "740300",
+  Chiapas = "740307",
+  Chihuahua = "740314",
+  Cdmx = "740321",
+  Durango = "740328",
+  Guanajuato = "740335",
+  Guerrero = "740342",
+  Hidalgo = "740349",
+  Jalisco = "740356",
+  México = "740363",
+  Michoacan = "740370",
+  Morelos = "740377",
+  Nayarit = "740384",
+  Nuevo_Leon = "740391",
+  Oaxaca = "740398",
+  Puebla = "740405",
+  Queretaro = "740412",
+  Quintana_Roo = "740416",# "740419",
+  San_Luis_Potosi = "740426",
+  Sinaloa = "740433",
+  Sonora = "740440",
+  Tabasco = "740447",
+  Tamaulipas = "740454",
+  Tlaxcala = "740461",
+  Veracruz = "740468",
+  Yucatan = "740475",
+  Zacatecas = "740482"
+)
+
+
+# Definir función para procesar cada serie
+procesar_serie <- function(serie_id, token) {
+  serie <- inegi_series(serie_id, token)
+  serie <- as_tibble(serie) %>%
+    select(-date_shortcut, -notes) %>%
+    filter(date >= "2003-02-01") %>%
+    arrange(date)
+  return(serie)
+}
+
+# Procesar cada serie
+for (nombre_serie in names(series)) {
+  assign(nombre_serie, procesar_serie(series[[nombre_serie]], token))
+}
+
+# Unimos todos los tibbles
+
+nombres <- names(series)
+
+ind_est <- lapply(nombres, function(nombre) get(nombre))
+ind_est <- setNames(ind_est, nombres)
+
+ind_est <- do.call(cbind, ind_est)
+glimpse(ind_est)
+
+ind_est <- ind_est %>% 
+  rename(date = Aguascalientes.date) %>%
+  select(-ends_with(".date"))
+
+ind_est <- ind_est %>% 
+  filter(date == last(date)) %>% 
+  pivot_longer(-date) %>% 
+  mutate(name = sub("\\.values$", "", name))
+
+ind_est <- ind_est %>% 
+  mutate(
+    name = case_when(
+      name == "Baja_California" ~ "Baja California",
+      name == "Baja_California_Sur" ~ "Baja California Sur",
+      name == "Cdmx" ~ "Ciudad de México",
+      name == "Michoacan" ~ "Michoacán",
+      name == "Nuevo_Leon" ~ "Nuevo León",
+      name == "Queretaro" ~ "Querétaro",
+      name == "Quintana_Roo" ~ "Quintana Roo",
+      name == "San_Luis_Potosi" ~ "San Luis Potosí",
+      name == "Yucatan" ~ "Yucatán",
+      TRUE ~ name
+    )
+  )
+
+ind_est <- ind_est %>% 
+  mutate(
+    categoria = case_when(
+      value < 0 ~ "Negativa",
+      value > 10 ~ "Mayor a 10%",
+      value >= 5 & value < 10 ~ "De 5 a 10%",
+      value < 5 & value > 0 ~ "Hasta 5%"
+    )
+  )
+
+abreviaciones <- c(
+  "Ags", "BC", "BCS", "Camp", "Coah", "Col", "Chis", "Chih", "CDMX", 
+  "Dgo", "Gto", "Gro", "Hgo", "Jal", "Mex", "Mich", "Mor", "Nay", 
+  "NL", "Oax", "Pue", "Qro", "QRoo", "SLP", "Sin", "Son", "Tab", 
+  "Tamps", "Tlax", "Ver", "Yuc", "Zac"
+)
+
+ind_est <- ind_est %>% 
+  mutate(
+    abr = abreviaciones
+  )
+
+
+# barras ------------------------------------------------------------------
+
+colores <- c("Negativa" = "#FDE9EF", "Hasta 5%" = "#c79dad",
+             "De 5 a 10%" = "#955870", "Mayor a 10%" = "#621132")
+
+
+ind_plot <- ggplot(data = ind_est %>% 
+                     filter(abr != c("QRoo", "Camp")) %>% 
+                     mutate(
+                       categoria = factor(categoria, 
+                                          levels = c("Mayor a 10%", "De 5 a 10%",
+                                                     "Hasta 5%","Negativa"))
+                     ), 
+                   aes(x = reorder(abr, value, sum),
+                       y = value,
+                       fill = categoria)) +
+  geom_bar(stat = "identity") +
+  scale_x_discrete(expand = expansion(add = c(0.6, 0.6)))+
+  coord_flip() +
+  scale_fill_manual(name = "",
+                    values = colores) +
+  theme_conasami +
+  theme(
+    axis.text.y = element_text(hjust = 1, size = 6.5),
+    axis.title.y = element_blank(),
+    legend.position = "none",
+    axis.text.x = element_text(size = 8)
+  )
+
+
+ind_plot
+path_plot <-"D:/Users/laura.cruz/Documents/mi dar/"
+fecha_hoy <- format(Sys.Date(), "%Y-%m")
+archivo_bar_plot <- paste(path_plot,"dar_imaef_bar_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_bar_plot, plot = ind_plot, 
+       width = 10, height = 8, units = "cm")
+# Creacion del mapa =========================================
+library(rnaturalearth)
+
+mexico <- ne_states(country = "Mexico", returnclass = "sf")
+mexico$woe_name <- ifelse(mexico$woe_name == "Distrito Federal", "Ciudad de México", mexico$woe_name)
+
+mexico <- mexico %>% 
+  left_join(ind_est, by = c("woe_name" = "name"))
+
+mexico <- mexico[-21,]
+
+# Convertir la columna "categoria" a factor y especificar el orden deseado
+mexico$categoria <- factor(mexico$categoria, levels = c("Negativa", "Hasta 5%", "De 5 a 10%", "Mayor a 10%"))
+
+
+
+# Graficar el mapa con ggplot y geom_sf
+imaief <- ggplot(data = mexico) +
+  geom_sf(aes(fill = categoria), color = "#414141") +
+  labs(fill = "Variación anual") +
+  scale_fill_manual(values = colores) +
+  theme_void() +
+  theme(legend.position = c(0.2,0.2),
+        text = element_text(family = "Noto Sans"),
+        legend.key.size = unit(0.4, "cm"))
+
+imaief
+fecha_hoy <- format(Sys.Date(), "%Y-%m")
+# Concatenar el año y el mes con el nombre del archivo
+archivo_iaie <- paste(path_plot, "dar_imaief_", fecha_hoy, ".svg", sep = "")
+ggsave(archivo_iaie, plot = imaief, 
+       width = 9, height = 6, units = "cm")
+
+
+
+
+# variación mensual 
+series <- list(
+  Aguascalientes = "740264",
+  Baja_California = "740271",
+  Baja_California_Sur = "740278",
+  Campeche = "740285",
+  Coahuila = "740292",
+  Colima = "740299",
+  Chiapas = "740306",
+  Chihuahua = "740313",
+  Cdmx = "740320",
+  Durango = "740327",
+  Guanajuato = "740334",
+  Guerrero = "740341",
+  Hidalgo = "740348",
+  Jalisco = "740355",
+  México = "740362",
+  Michoacan = "740369",
+  Morelos = "740376",
+  Nayarit = "740383",
+  Nuevo_Leon = "740390",
+  Oaxaca = "740397",
+  Puebla = "740404",
+  Queretaro = "740411",
+  Quintana_Roo = "740418",# "740419",
+  San_Luis_Potosi = "740425",
+  Sinaloa = "740432",
+  Sonora = "740439",
+  Tabasco = "740446",
+  Tamaulipas = "740453",
+  Tlaxcala = "740460",
+  Veracruz = "740467",
+  Yucatan = "740474",
+  Zacatecas = "740481"
+)
+
+for (nombre_serie in names(series)) {
+  assign(nombre_serie, procesar_serie(series[[nombre_serie]], token))
+}
+
+# Unimos todos los tibbles
+
+nombres <- names(series)
+
+ind_est_mensual <- lapply(nombres, function(nombre) get(nombre))
+ind_est_mensual <- setNames(ind_est_mensual, nombres)
+
+ind_est_mensual <- do.call(cbind, ind_est_mensual)
+
+ind_est_mensual <- ind_est_mensual %>% 
+  rename(date = Aguascalientes.date) %>%
+  select(-ends_with(".date"))
+
+ind_est_mensual <- ind_est_mensual %>% 
+  filter(date == last(date)) %>% 
+  pivot_longer(-date) %>% 
+  mutate(name = sub("\\.values$", "", name))
+
+ind_est_mensual <- ind_est_mensual %>% 
+  select(mensual = value)
+
+cuadro_exportacion <- bind_cols(ind_est, ind_est_mensual)
+
+path_xlsx <-"D:/Users/laura.cruz/Documents/mi dar/"
+path <- paste(path_xlsx, "imaief", ".xlsx", sep = "")
+write_xlsx(cuadro_exportacion, path)
+
